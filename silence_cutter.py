@@ -17,7 +17,7 @@ log_handler = logging.FileHandler(log_filename, delay=True)
 logger.addHandler(log_handler)
 
 
-def findSilences(filename, dB = -35):
+def findSilences(filename, dB):
   """
     returns a list:
       even elements (0,2,4, ...) denote silence start time
@@ -49,6 +49,7 @@ def findSilences(filename, dB = -35):
   silence_section_list = list (zip(*[iter(time_list)]*2))
 
   #return silence_section_list
+  print(time_list)
   return time_list
 
 
@@ -65,11 +66,26 @@ def getVideoDuration(filename:str) -> float:
   s = str(output.stdout, "UTF-8")
   return float (s)
 
-def getSectionsOfNewVideo (silences, duration):
+def getSectionsOfNewVideo (silences, duration, buffer):
   """Returns timings for parts, where the video should be kept"""
+  print("silences before adding buffer", str(silences))
+  silences=add_buffer(silences, duration, buffer)
+  print("silences after adding buffer", str(silences))
+  print("whatever needs to be printed", str([0.0] + silences + [duration]))
   return [0.0] + silences + [duration]
 
-
+def add_buffer(silences, duration, buffer):
+  """Adds a buffer of BUFFER seconds to the silences"""
+  for i in range (len(silences)):
+    if(i==0):
+      silences[i] =silences[i]
+    elif (i == len(silences)-1):
+      silences[i] = duration
+    elif (i % 2 == 1):
+      silences[i] = max(silences[i]-BUFFER,silences[i-1],0)
+    elif (i % 2 == 0):
+      silences[i] = min(duration, silences[i]+BUFFER, silences[i+1])
+  return silences
 def ffmpeg_filter_getSegmentFilter(videoSectionTimings):
   ret = ""
   for i in range (int (len(videoSectionTimings)/2)):
@@ -123,7 +139,7 @@ def ffmpeg_run (file, videoFilter, audioFilter, outfile):
 
 
 
-def cut_silences(infile, outfile, dB = -35):
+def cut_silences(infile, outfile, dB, buffer):
   logging.debug(f"cut_silences ()")
   logging.debug(f"    - infile = {infile}")
   logging.debug(f"    - outfile = {outfile}")
@@ -132,7 +148,7 @@ def cut_silences(infile, outfile, dB = -35):
   print ("detecting silences")
   silences = findSilences (infile,dB)
   duration = getVideoDuration (infile)
-  videoSegments = getSectionsOfNewVideo (silences, duration)
+  videoSegments = getSectionsOfNewVideo (silences, duration, buffer)
 
   videoFilter = getFileContent_videoFilter (videoSegments)
   audioFilter = getFileContent_audioFilter (videoSegments)
@@ -165,6 +181,7 @@ def printHelp():
 def main():
   logging.debug(f"main ()")
   args = sys.argv[1:]
+  print ("args: " + str(args))
   if (len(args) < 1):
     printHelp()
     return
@@ -182,13 +199,14 @@ def main():
   # set default values for optionl arguments
   tmp = os.path.splitext (infile)
   outfile = tmp[0] + "_cut" + tmp[1]
-  dB = -30
 
   if (len(args) >= 2):
     outfile = args[1]
+  dB = -25
+  BUFFER = 0.2
 
-  if (len(args) >= 3):
-    dB = args[2]
+  # if (len(args) >= 3):
+  #   dB = args[2]
 
 
   cut_silences (infile, outfile, dB)
